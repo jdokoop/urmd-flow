@@ -41,11 +41,9 @@ struct particle
 //Number of bins in histograms
 const int NOB = 100;
 
-int npart;
+int npart = 0;
+int npartsum = 0;
 int numevent=0;
-
-vector<float> sumbin;
-vector<int> numbin;
 
 vector<float> epsilon2;
 vector<float> epsilon3;
@@ -159,26 +157,24 @@ void processEvent()
 	psi2.push_back(s2);
 	psi3.push_back(s3);
 
+	//cout << "-----> psi2 = " << s2 << endl;
+	//cout << "-----> psi3 = " << s3 << endl;
+	//cout << "-----> epsilon2 = " << e2 << endl;
+
+	hPsi2->Fill(s2);
 }
 
 void parseGeometry()
 {
   //Initialize histogram
-	hPsi2  = new TH1F("hPsi2","hPsi2",NOB,-2*TMath::Pi(),2*TMath::Pi());
+	hPsi2  = new TH1F("hPsi2","hPsi2",NOB,0,TMath::Pi());
 	hv2_pT = new TH2F("hv2_pT","hv2_pT",50,-1.5,1.5,100,0,5);
 	//hv2_pT = new TProfile("hv2_pT","hv2_pT",NOB,0,5,-2,2);
 	//hv3_pT = new TProfile("hv3_pT","hv3_pT",NOB,0,5,-2,2);
 
-  //Set initial value of (sum) & (number of particles) in each bin to 0
-	for(int i=0; i<NOB; i++)
-	{
-		sumbin.push_back(0);
-		numbin.push_back(0);
-	}
-
   //Read in test.f20 file
 	ifstream dataFile;
-	dataFile.open("test.f20");
+	dataFile.open("test_1k.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -202,32 +198,36 @@ void parseGeometry()
 		if(tokens[0] == "#") continue;
 
       //Find new event header
-		if(tokens[0] == "0" && tokens[1] == "199")
+		if(tokens[0] == "0" && tokens[1] == "209")
 		{
-        //cout << "NEW EVENT!" << endl;
-
 			numevent++;
 
         //Skip the following 199 lines
-			for(int i=0; i<199; i++)
+			for(int i=0; i<209; i++)
 			{
 				std::getline(dataFile,linestr);
 			}
+
+			continue;
 		}
 
       //Find collision header in the current event for 2 -> many scatterings
 		if(tokens[0] == "2")
 		{
+			int numcollproducts = atoi(tokens[1].c_str());
+			//cout << "Decay products " << numcollproducts << endl;
+			//cout << "TOKENS " << tokens[0] << "    " << tokens[1] << "   " << tokens[2] << "   " << tokens[3] <<  endl;
+
 			particle p1;
 			particle p2;
 
 			tokens.clear();
 			std::getline(dataFile,linestr);
-			istringstream iss(linestr);
-			copy(istream_iterator<string>(iss), istream_iterator<string>(), back_inserter(tokens));
+			istringstream iss2(linestr);
+			copy(istream_iterator<string>(iss2), istream_iterator<string>(), back_inserter(tokens));
 
         //Is this scattering between nucleons?
-			if(atoi(tokens[0].c_str()) >= 0 && atoi(tokens[0].c_str()) <= 199)
+			if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= 209)
 			{
 	  			//Store px,py,pz,x,y,z for first particle
 				p1.px=atof(tokens[3].c_str());
@@ -239,10 +239,10 @@ void parseGeometry()
 
 				tokens.clear();
 				std::getline(dataFile,linestr);
-				istringstream iss(linestr);
-				copy(istream_iterator<string>(iss), istream_iterator<string>(), back_inserter(tokens));
+				istringstream iss3(linestr);
+				copy(istream_iterator<string>(iss3), istream_iterator<string>(), back_inserter(tokens));
 
-				if(atoi(tokens[0].c_str()) >= 0 && atoi(tokens[0].c_str()) <= 199)
+				if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= 199)
 				{
 	    			//Store px,py,pz,x,y,z for second particle
 					p2.px=atof(tokens[3].c_str());
@@ -255,28 +255,46 @@ void parseGeometry()
 					collisionparticles.push_back(p1);
 					collisionparticles.push_back(p2);
 
+					npartsum = npartsum + 2;
 					npart = npart + 2;
 				}
-				else
+
+				for(int i=0; i<numcollproducts; i++)
 				{
-					continue;
+					std::getline(dataFile,linestr);	
 				}
+				continue;
 			}
-      }
+
+			//Skip over the rest of the lines corresponding to collision products
+			for(int i=0; i<numcollproducts+1; i++)
+			{
+				std::getline(dataFile,linestr);	
+			}
+			continue;
+		}
+
+		//Identify final-state particles and skip them
+		if(atoi(tokens[0].c_str()) > 0 && tokens[1] == "0" && tokens.size() == 2)
+		{
+			for(int i=0; i<atoi(tokens[0].c_str()); i++)
+			{
+				std::getline(dataFile,linestr);	
+			}
+		}
 
       //Process event
       if(tokens[0] == "0" && tokens[1] == "0")
       {
       	processEvent();
       	collisionparticles.clear();
+      	//cout << " --> npart = " << npart << endl << endl;
+      	npart = 0;
       }
       
       if (!dataFile) break;
 
     }
-
-	//Plot interesting things
-    //hv2_pT->Draw("SURF2");
 
     //Compute mean epsilon2 and epsilon3
     float ep2avg = 0;
@@ -294,9 +312,12 @@ void parseGeometry()
     }
     ep3avg = ep3avg/epsilon3.size();
 
-    cout << "<ep2>  = " << ep2avg << endl;
-    cout << "<ep3>  = " << ep3avg << endl;
+	cout << "Nevt    = " << numevent << endl;
+    cout << "<ep2>   = " << ep2avg << endl;
+    cout << "<ep3>   = " << ep3avg << endl;
+    cout << "<Npart> = " << (float) npartsum/numevent << endl;
 
-    writeData();
+    //writeData();
+    hPsi2->Draw();
 
 }
