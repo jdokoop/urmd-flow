@@ -53,12 +53,19 @@ struct particle
 //Number of bins in histograms
 const int NOB = 100;
 
+//Number of nucleons in system
+// --> d+Au = 199
+// --> d+Pb = 210
+// --> p+Pb = 209
+const int NUCL = 210;
+
 int npart = 0;
 int npartsum = 0;
+int nspectator = 0;
 int numevent=0;
 int process_number = 0;
 
-//Vectors to store event-wise geometric parameters
+//Vectors to store event-level geometric parameters
 vector<float> epsilon2;
 vector<float> epsilon3;
 vector<float> psi2;
@@ -237,12 +244,12 @@ void parseGeometry(int proc)
 		if(tokens[0] == "#") continue;
 
   		//Find new event header
-		if(tokens[0] == "0" && tokens[1] == "210")
+		if(atoi(tokens[0].c_str()) == 0 && atoi(tokens[1].c_str()) == NUCL)
 		{
 			numevent++;
 
     		//Skip the following lines
-			for(int i=0; i<210; i++)
+			for(int i=0; i<NUCL; i++)
 			{
 				std::getline(dataFile,linestr);
 				if(parse_verbosity) cout << "**    " << linestr << endl;
@@ -267,7 +274,7 @@ void parseGeometry(int proc)
 
 
     		//Is this scattering between nucleons?
-			if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= 210)
+			if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= NUCL)
 			{
   				//Store px,py,pz,x,y,z for first particle
 				p1.px=atof(tokens[3].c_str());
@@ -283,7 +290,7 @@ void parseGeometry(int proc)
 				copy(istream_iterator<string>(iss3), istream_iterator<string>(), back_inserter(tokens));
 				if(parse_verbosity) cout << "+     " << linestr << endl;
 
-				if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= 210)
+				if(atoi(tokens[0].c_str()) >= 1 && atoi(tokens[0].c_str()) <= NUCL)
 				{
     				//Store px,py,pz,x,y,z for second particle
 					p2.px=atof(tokens[3].c_str());
@@ -337,6 +344,8 @@ void parseGeometry(int proc)
 				pf.py = atof(finalstate_tokens[4].c_str());
 				pf.pz = atof(finalstate_tokens[5].c_str());
 
+				if(atoi(finalstate_tokens[0].c_str()) <= NUCL) nspectator++;
+
 				finalparticles.push_back(pf);	
 				if(parse_verbosity) cout << "****  " << linestr << endl;
 			}
@@ -371,10 +380,12 @@ void parseGeometry(int proc)
 	}
 	ep3avg = ep3avg/epsilon3.size();
 
-	cout << "Nevt    = " << numevent << endl;
-	cout << "<ep2>   = " << ep2avg << endl;
-	cout << "<ep3>   = " << ep3avg << endl;
-	cout << "<Npart> = " << (float) npartsum/numevent << endl;
+	cout << "Nevt         = " << numevent << endl;
+	cout << "<ep2>        = " << ep2avg << endl;
+	cout << "<ep3>        = " << ep3avg << endl;
+	cout << "<Npart_NN>   = " << (float) npartsum/numevent << endl;
+	cout << "<Nspec>      = " << (float) nspectator/numevent << endl;
+	cout << "<Npart>      = " << NUCL - (float) nspectator/numevent << endl;
 
 	//writeData();
 }
