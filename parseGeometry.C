@@ -1,10 +1,9 @@
-
 //-----------------------------------------------
 // Code to parse the OSCAR199A output file from
 // Ultrarelativistic Quantum Molecular Dynamics
 // and calculate anisotropic flow coefficients
 //   (1) with respect to the event plane
-//   (2) with two-particle cumulants
+//   (2) with four-particle cumulants
 //
 // Authors: J. Orjuela-Koop
 //          P. Yin
@@ -54,16 +53,38 @@ struct particle
 const int NOB = 100;
 
 //Number of nucleons in system
+// --> p+Au = 198
 // --> d+Au = 199
 // --> d+Pb = 210
 // --> p+Pb = 209
-const int NUCL = 210;
+const int NUCL = 209;
 
-int npart = 0;
-int npartsum = 0;
-int nspectator = 0;
-int numevent=0;
+//Event characterization variables
+int npart          = 0;
+int npartsum       = 0;
+int nspectator     = 0;
+int numevent       = 0;
 int process_number = 0;
+
+//Variables for reference four-particle cumulant analysis
+float q2x  = 0;
+float q2y  = 0;
+float q4x  = 0;
+float q4y  = 0;
+int n      = 0;
+float cn_2 = 0;
+float cn_4 = 0;
+float db_2 = 0;
+float db_4 = 0;
+
+//Variables for differential four-particle cumulant analysis
+TH1F *hpT_Template;
+TProfile *hdb_2prime;
+TProfile *hdb_4prime;
+TProfile *hdb_2;
+TProfile *hdb_4;
+TH1F *hd_2;
+TH1F *hv2_4;
 
 //Vectors to store event-level geometric parameters
 vector<float> epsilon2;
@@ -90,29 +111,143 @@ bool parse_verbosity = false;
 //---------------------------------------------------------
 
 void writeData()
-{
-//Write event plane angles to file
-/*	
-ofstream myfile;
-myfile.open ("psi2.txt");
-for(unsigned int i=0; i<psi2.size(); i++)
-{
-	myfile << psi2[i] << endl;
+{	
+	TFile *fout = new TFile(Form("/direct/phenix+hhj/jdok/UrQMD_Output/urqmd_out_%i.root",process_number),"RECREATE");
+	hdb_2prime->Write();
+	hdb_4prime->Write();
+	hdb_2->Write();
+	hdb_4->Write();
+	fout->Close();
 }
-myfile.close();
 
-myfile.open ("psi3.txt");
-for(unsigned int i=0; i<psi3.size(); i++)
+void computeCumulants()
 {
-	myfile << psi3[i] << endl;
-}
-myfile.close();
-*/
+	db_2 = db_2/numevent;
+	db_4 = db_4/numevent;
 
-TFile *fout = new TFile(Form("/direct/phenix+hhj/jdok/UrQMD_Output/urqmd_out_%i.root",process_number),"RECREATE");
-hv2_pT->Write();
-hv3_pT->Write();
-fout->Close();
+	cn_2 = db_2;
+	cn_4 = db_4 - 2*pow(db_2,2);
+
+	cout << "db2 = "<< db_2 << endl;
+	cout << "db4 = "<< db_4 << endl;
+
+	for(int i=1; i<=hpT_Template->GetNbinsX(); i++)
+	{
+		float cont = (hdb_4prime->GetBinContent(i)) - 2*(hdb_2prime->GetBinContent(i))*db_2;
+		hd_2->SetBinContent(i, cont);
+	}
+
+	hdb_2->Fill(0.5,db_2,1);
+	hdb_4->Fill(0.5,db_4,1);
+
+	//Finally, compute v2
+	float scaleFactor = -1*pow(-1*cn_4,3.0/4.0);
+	hd_2->Scale(1.0/scaleFactor);
+
+	//Two-particle cumulant result
+	hdb_2prime->Scale(1.0/sqrt(cn_2));
+	//hdb_2prime->Draw();
+
+	//Two particle correlation result
+	//hv2_4 = (TH1F*) hd_2->Clone("hv2_4");
+	//hd_2->Draw();
+
+	//Four particle correlation result
+	//hd_2->Draw();
+}
+
+void processEventCumulants()
+{
+	//Initialize variables
+	n   = 0;
+	q2x = 0;
+	q2y = 0;
+	q4x = 0;
+	q4y = 0;
+
+	//Compute reference flow for the event at hand
+	for(int i=0; i<finalparticles.size(); i++)
+	{
+		float eta = finalparticles[i].eta;
+		float phi = finalparticles[i].phi;
+		float pT  = finalparticles[i].pT;
+
+		//Only consider particles within -2 < eta < 2 and 0 < pT [GeV/c] < 5
+		if(TMath::Abs(eta) > 2.0 || pT > 5.0) continue;
+
+		q2x = q2x + TMath::Cos(2*phi);
+		q2y = q2y + TMath::Sin(2*phi);
+
+		q4x = q4x + TMath::Cos(4*phi);
+		q4y = q4y + TMath::Sin(4*phi);
+
+		n++;
+	}
+
+	float sb_2 = ((q2x*q2x + q2y*q2y) - n)/(n*(n-1));
+	float sb_4 = ((q2x*q2x + q2y*q2y)*(q2x*q2x + q2y*q2y) + (q4x*q4x + q4y*q4y) - 2*(q4x*q2x*q2x - q4x*q2y*q2y + 2*q4y*q2y*q2y) - 4*(n-2)*(q2x*q2x + q2y*q2y) + 2*n*(n-3))/(n*(n-1)*(n-2)*(n-3));
+
+	//These will need to be divided by the total number of events later on
+	db_2 = db_2 + sb_2;
+	db_4 = db_4 + sb_4;
+
+	//Compute differential flow for the event at hand
+	TH1F *hp2x         = (TH1F*) hpT_Template->Clone("hp2x");
+	TH1F *hp2y         = (TH1F*) hpT_Template->Clone("hp2y");
+	TH1F *hp4x         = (TH1F*) hpT_Template->Clone("hp4x");
+	TH1F *hp4y         = (TH1F*) hpT_Template->Clone("hp4y");
+	TH1F *hsb_2prime   = (TH1F*) hpT_Template->Clone("hsb_2prime");
+	TH1F *hsb_4prime   = (TH1F*) hpT_Template->Clone("hsb_4prime");
+
+	float m[NOB] = {0};
+
+	for(int i=0; i<finalparticles.size(); i++)
+	{
+		float eta = finalparticles[i].eta;
+		float phi = finalparticles[i].phi;
+		float pT = finalparticles[i].pT;
+
+		if(TMath::Abs(eta) > 2.0 || pT > 5.0) continue;
+
+		int bin = hpT_Template->FindBin(pT);
+		hp2x->SetBinContent(bin, hp2x->GetBinContent(bin) + TMath::Cos(2*phi));
+		hp2y->SetBinContent(bin, hp2y->GetBinContent(bin) + TMath::Sin(2*phi));
+		hp4x->SetBinContent(bin, hp4x->GetBinContent(bin) + TMath::Cos(4*phi));
+		hp4y->SetBinContent(bin, hp4y->GetBinContent(bin) + TMath::Sin(4*phi));
+
+		m[bin-1]++;
+	}
+ 
+	for(int i=1; i<= hsb_2prime->GetNbinsX(); i++)
+	{
+		float aux1 = (hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
+		float aux2 = m[i-1]*(n-1); 
+		hsb_2prime->SetBinContent(i, (aux1-m[i-1])/aux2);
+	}
+
+	for(int i=1; i<hdb_4prime->GetNbinsX(); i++)
+	{
+		float aux1  = (hp2x->GetBinContent(i))*pow(q2x,3) + (hp2y->GetBinContent(i))*pow(q2x,2)*q2y + (hp2x->GetBinContent(i))*q2y*pow(q2y,2) + (hp2y->GetBinContent(i))*pow(q2y,3);
+		float aux2  = (hp4x->GetBinContent(i))*pow(q2x,2) + 2*(hp4y->GetBinContent(i))*q2x*q2y - (hp4x->GetBinContent(i))*pow(q2y,2);
+		float aux3  = (hp2x->GetBinContent(i))*q2x*q4x - (hp2y->GetBinContent(i))*q2y*q4x + (hp2y->GetBinContent(i))*q2x*q4y + (hp2x->GetBinContent(i))*q2y*q4y;
+		float aux4  = 2*n*((hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y);
+		float aux5  = 2*m[i]*(pow(q2x,2) + pow(q2y,2));
+		float aux6  = 7*(hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
+		float aux7  = (hp2x->GetBinContent(i))*q2x + (hp2x->GetBinContent(i))*q2y;
+		float aux8  = (hp4x->GetBinContent(i))*q4x + (hp4y->GetBinContent(i))*q4y;
+		float aux9  = 2*(hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
+		float aux10 = 2*m[i]*n;
+		float aux11 = 6*m[i];
+		float aux12 = (m[i]*n-3*m[i])*(n-1)*(n-2);
+
+		hsb_4prime->SetBinContent(i, (aux1-aux2-aux3-aux4-aux5+aux6-aux7+aux8+aux9+aux10-aux11)/(aux12));
+	}
+
+	for(int i=1; i<=hpT_Template->GetNbinsX(); i++)
+	{
+		hdb_2prime->Fill(hsb_2prime->GetBinCenter(i), hsb_2prime->GetBinContent(i),1);
+		hdb_4prime->Fill(hsb_4prime->GetBinCenter(i), hsb_4prime->GetBinContent(i),1);
+	}
 }
 
 void processEvent()
@@ -213,13 +348,19 @@ void parseGeometry(int proc)
 	process_number = proc;
 
 	//Initialize histogram
-	hPsi2  = new TH1F("hPsi2","hPsi2",50,0,TMath::Pi());
-	hv2_pT = new TProfile("hv2_pT","hv2_pT",NOB,0,5,-2,2);
-	hv3_pT = new TProfile("hv3_pT","hv3_pT",NOB,0,5,-2,2);
+	hPsi2      = new TH1F("hPsi2","hPsi2",50,0,TMath::Pi());
+	hv2_pT     = new TProfile("hv2_pT","hv2_pT",NOB,0,5,-2,2);
+	hv3_pT     = new TProfile("hv3_pT","hv3_pT",NOB,0,5,-2,2);
+	hpT_Template = new TH1F("hpT_Template","hpT_Template",NOB,0,5);
+	hdb_2prime = new TProfile("hdb_2prime","hdb_2prime",NOB,0,5,-500,500);
+	hdb_4prime = new TProfile("hdb_4prime","hdb_4prime",NOB,0,5,-500,500);
+	hd_2       = new TH1F("hd_2","hd_2",NOB,0,5);
+	hdb_2      = new TProfile("hdb_2","hdb_2",1,0,1,-100,100);
+	hdb_4      = new TProfile("hdb_4","hdb_4",1,0,1,-100,100);
 
 	//Read in test.f20 file
 	ifstream dataFile;
-	dataFile.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test_dPb_5TeV.f20");
+	dataFile.open("test.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -354,7 +495,8 @@ void parseGeometry(int proc)
   		//Process event
 		if(tokens[0] == "0" && tokens[1] == "0")
 		{
-			processEvent();
+			//processEvent();
+			processEventCumulants();
 			collisionparticles.clear();
 			finalparticles.clear();
 			npart = 0;
@@ -363,6 +505,8 @@ void parseGeometry(int proc)
 		if (!dataFile) break;
 
 	}
+
+	computeCumulants();
 
 	//Compute mean epsilon2 and epsilon3
 	float ep2avg = 0;
@@ -387,5 +531,5 @@ void parseGeometry(int proc)
 	cout << "<Nspec>      = " << (float) nspectator/numevent << endl;
 	cout << "<Npart>      = " << NUCL - (float) nspectator/numevent << endl;
 
-	//writeData();
+	writeData();
 }
