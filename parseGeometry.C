@@ -49,6 +49,13 @@ struct particle
 	float eta;
 };
 
+//Complex number 
+struct cmpx
+{
+	float re;
+	float im;
+};
+
 //Number of bins in histograms
 const int NOB = 100;
 
@@ -57,7 +64,7 @@ const int NOB = 100;
 // --> d+Au = 199
 // --> d+Pb = 210
 // --> p+Pb = 209
-const int NUCL = 209;
+const int NUCL = 199;
 
 //Event characterization variables
 int npart          = 0;
@@ -103,12 +110,48 @@ TH1F *hPsi2;
 TProfile *hv2_pT;
 TProfile *hv3_pT;
 
+//Diagnostic histograms
+TH1F *hEta;
+TH1F *hpT;
+TH1F *hpT_EtaCut;
+TH1F *hPhi;
+
 //Miscellaneous options
 bool parse_verbosity = false;
 
 //---------------------------------------------------------
 // Functions
 //---------------------------------------------------------
+
+cmpx multiplyComplex(float x, float y, float u, float v)
+{
+	//z1 = x + iy
+	//z2 = u + iv
+	cmpx c;
+	c.re = x*u -y*v;
+	c.im = x*v + y*u;
+
+	return c;
+}
+
+float getNormSq(float x, float y)
+{
+	//z = x + iy
+	return x*x + y*y;
+}
+
+void draw()
+{
+  gStyle->SetOptStat(0);
+  TCanvas *c1 = new TCanvas("c1","c1",600,600);
+  hEta->Draw();
+
+  TCanvas *c2 = new TCanvas("c2","c2",600,600);
+  hpT->Draw();
+
+  TCanvas *c3 = new TCanvas("c3","c3",600,600);
+  hPhi->Draw();
+}
 
 void writeData()
 {	
@@ -122,14 +165,11 @@ void writeData()
 
 void computeCumulants()
 {
-	db_2 = db_2/numevent;
-	db_4 = db_4/numevent;
+	db_2 = hdb_2->GetBinContent(1);
+	db_4 = hdb_4->GetBinContent(1);
 
 	cn_2 = db_2;
 	cn_4 = db_4 - 2*pow(db_2,2);
-
-	cout << "db2 = "<< db_2 << endl;
-	cout << "db4 = "<< db_4 << endl;
 
 	for(int i=1; i<=hpT_Template->GetNbinsX(); i++)
 	{
@@ -137,16 +177,16 @@ void computeCumulants()
 		hd_2->SetBinContent(i, cont);
 	}
 
-	hdb_2->Fill(0.5,db_2,1);
-	hdb_4->Fill(0.5,db_4,1);
-
+	//cout << "<<2>> = " << db_2 << endl;
+	//cout << "<<4>> = " << db_4 << endl;
+	
 	//Finally, compute v2
 	float scaleFactor = -1*pow(-1*cn_4,3.0/4.0);
 	hd_2->Scale(1.0/scaleFactor);
 
 	//Two-particle cumulant result
 	hdb_2prime->Scale(1.0/sqrt(cn_2));
-	//hdb_2prime->Draw();
+	//hdb_4prime->Draw();
 
 	//Two particle correlation result
 	//hv2_4 = (TH1F*) hd_2->Clone("hv2_4");
@@ -172,8 +212,14 @@ void processEventCumulants()
 		float phi = finalparticles[i].phi;
 		float pT  = finalparticles[i].pT;
 
+		hEta->Fill(eta);
+		hpT->Fill(pT);
+		hPhi->Fill(phi);
+
 		//Only consider particles within -2 < eta < 2 and 0 < pT [GeV/c] < 5
 		if(TMath::Abs(eta) > 2.0 || pT > 5.0) continue;
+
+		hpT_EtaCut->Fill(eta);
 
 		q2x = q2x + TMath::Cos(2*phi);
 		q2y = q2y + TMath::Sin(2*phi);
@@ -181,15 +227,22 @@ void processEventCumulants()
 		q4x = q4x + TMath::Cos(4*phi);
 		q4y = q4y + TMath::Sin(4*phi);
 
+		cout << finalparticles[i].pz << endl;
+
 		n++;
 	}
 
-	float sb_2 = ((q2x*q2x + q2y*q2y) - n)/(n*(n-1));
-	float sb_4 = ((q2x*q2x + q2y*q2y)*(q2x*q2x + q2y*q2y) + (q4x*q4x + q4y*q4y) - 2*(q4x*q2x*q2x - q4x*q2y*q2y + 2*q4y*q2y*q2y) - 4*(n-2)*(q2x*q2x + q2y*q2y) + 2*n*(n-3))/(n*(n-1)*(n-2)*(n-3));
+	float sb_2 = (getNormSq(q2x,q2y) - n)/(n*(n-1));
 
-	//These will need to be divided by the total number of events later on
-	db_2 = db_2 + sb_2;
-	db_4 = db_4 + sb_4;
+	cmpx c1 = multiplyComplex(q2x, -1*q2y, q2x, -1*q2y); 
+	cmpx c2 = multiplyComplex(q4x, q4y, c1.re, c1.im);
+	float sb_4 = (getNormSq(q2x,q2y)*getNormSq(q2x,q2y) + getNormSq(q4x,q4y) - 2*c2.re - 4*(n-2)*getNormSq(q2x,q2y) + 2*n*(n-3))/(n*(n-1)*(n-2)*(n-3));
+
+	cout << "<2> = " << sb_2 << endl;
+	cout << "<4> = " << sb_4 << endl << endl;
+
+	hdb_2->Fill(0.5,sb_2,1);
+	hdb_4->Fill(0.5,sb_4,1);
 
 	//Compute differential flow for the event at hand
 	TH1F *hp2x         = (TH1F*) hpT_Template->Clone("hp2x");
@@ -220,22 +273,43 @@ void processEventCumulants()
  
 	for(int i=1; i<= hsb_2prime->GetNbinsX(); i++)
 	{
-		float aux1 = (hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
+		cmpx aux1 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2x, -1*q2y);
 		float aux2 = m[i-1]*(n-1); 
-		hsb_2prime->SetBinContent(i, (aux1-m[i-1])/aux2);
+		hsb_2prime->SetBinContent(i, (aux1.re-m[i-1])/aux2);
 	}
 
 	for(int i=1; i<hdb_4prime->GetNbinsX(); i++)
 	{
-		float aux1  = (hp2x->GetBinContent(i))*pow(q2x,3) + (hp2y->GetBinContent(i))*pow(q2x,2)*q2y + (hp2x->GetBinContent(i))*q2y*pow(q2y,2) + (hp2y->GetBinContent(i))*pow(q2y,3);
-		float aux2  = (hp4x->GetBinContent(i))*pow(q2x,2) + 2*(hp4y->GetBinContent(i))*q2x*q2y - (hp4x->GetBinContent(i))*pow(q2y,2);
-		float aux3  = (hp2x->GetBinContent(i))*q2x*q4x - (hp2y->GetBinContent(i))*q2y*q4x + (hp2y->GetBinContent(i))*q2x*q4y + (hp2x->GetBinContent(i))*q2y*q4y;
-		float aux4  = 2*n*((hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y);
-		float aux5  = 2*m[i]*(pow(q2x,2) + pow(q2y,2));
-		float aux6  = 7*(hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
-		float aux7  = (hp2x->GetBinContent(i))*q2x + (hp2x->GetBinContent(i))*q2y;
-		float aux8  = (hp4x->GetBinContent(i))*q4x + (hp4y->GetBinContent(i))*q4y;
-		float aux9  = 2*(hp2x->GetBinContent(i))*q2x + (hp2y->GetBinContent(i))*q2y;
+		cmpx aux1_0 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2x, q2y);
+		cmpx aux1_1 = multiplyComplex(q2x, -1*q2y, q2x, -1*q2y);
+		cmpx aux1_2 = multiplyComplex(aux1_0.re, aux1_0.im, aux1_1.re, aux1_1.im);
+		float aux1  = aux1_2.re;
+
+		cmpx aux2_0 = multiplyComplex(hp4x->GetBinContent(i), hp4y->GetBinContent(i), q2x, -1*q2y);
+		cmpx aux2_1 = multiplyComplex(aux2_0.re, aux2_0.im, q2x, -1*q2y);
+		float aux2  = aux2_1.re;
+
+		cmpx aux3_0 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2x, q2y);
+		cmpx aux3_1 = multiplyComplex(aux3_0.re, aux3_0.im, q4x, -1*q4y);
+		float aux3  = aux2_1.re;
+
+		cmpx aux4_0 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2y, -1*q2y);
+		float aux4  = 2*n*aux4_0.re;
+
+		float aux5  = 2*m[i]*getNormSq(q2x,q2y);
+
+		cmpx aux6_0 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2x, -1*q2y);
+		float aux6  = 7*aux6_0.re;
+
+		cmpx aux7_0 = multiplyComplex(q2x, q2y, hp2x->GetBinContent(i), -1*hp2y->GetBinContent(i));
+		float aux7  = aux7_0.re;
+
+		cmpx aux8_0 = multiplyComplex(hp4x->GetBinContent(i), hp4y->GetBinContent(i), q4x, -1*q4y);
+		float aux8  = aux8_0.re;
+
+		cmpx aux9_0 = multiplyComplex(hp2x->GetBinContent(i), hp2y->GetBinContent(i), q2x, -1*q2y);
+		float aux9  = 2*aux9_0.re;
+
 		float aux10 = 2*m[i]*n;
 		float aux11 = 6*m[i];
 		float aux12 = (m[i]*n-3*m[i])*(n-1)*(n-2);
@@ -358,9 +432,14 @@ void parseGeometry(int proc)
 	hdb_2      = new TProfile("hdb_2","hdb_2",1,0,1,-100,100);
 	hdb_4      = new TProfile("hdb_4","hdb_4",1,0,1,-100,100);
 
+	hEta         = new TH1F("hEta","hEta;#eta;Counts",NOB,-6,6);
+  	hpT          = new TH1F("hpT","hpT;p_{T};Counts",NOB,0,10);
+  	hpT_EtaCut   = new TH1F("hpT_EtaCut","hpT_EtaCut;p_{T};Counts",NOB,0,20);
+  	hPhi         = new TH1F("hPhi","hPhi;#phi;Counts",NOB,-TMath::Pi(),TMath::Pi());
+
 	//Read in test.f20 file
 	ifstream dataFile;
-	dataFile.open("test.f20");
+	dataFile.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -507,6 +586,7 @@ void parseGeometry(int proc)
 	}
 
 	computeCumulants();
+	draw();
 
 	//Compute mean epsilon2 and epsilon3
 	float ep2avg = 0;
@@ -531,5 +611,5 @@ void parseGeometry(int proc)
 	cout << "<Nspec>      = " << (float) nspectator/numevent << endl;
 	cout << "<Npart>      = " << NUCL - (float) nspectator/numevent << endl;
 
-	writeData();
+	//writeData();
 }
