@@ -37,6 +37,7 @@ using namespace std;
 //Data structure to contain particles
 struct particle
 {
+	int id;
 	float px;
 	float py;
 	float pz;
@@ -82,6 +83,12 @@ vector<particle> collisionparticles;
 //Final state hadrons in each event
 vector<particle> finalparticles;
 
+//Spectators determined by looking at final state PIDs
+vector<particle> spectatorParticles;
+
+//Participants determined by looking at final state PIDS
+vector<particle> participantParticles;
+
 //Histograms for plotting
 TH1F *hPsi2;
 TProfile *hv2_pT;
@@ -101,6 +108,41 @@ void writeData()
 	fout->Close();
 }
 
+bool isParticipant(int identifier)
+{
+	for(int i=0; i<spectatorParticles.size(); i++)
+	{
+		int id = spectatorParticles[i].id;
+
+		if(identifier == id) return false;
+	}
+
+	return true;
+}
+
+void determineParticipants()
+{
+	//Get the original nucleon positions for the event at hand
+	int eventNucleons = r0_x[numevent-1].size();
+	vector<float> nucleons_x = r0_x[numevent-1];
+	vector<float> nucleons_y = r0_y[numevent-1];
+
+	for(int i=0; i< eventNucleons; i++)
+	{
+		if(!isParticipant(i+1)) continue;
+
+		particle p;
+		p.x = nucleons_x[i];
+		p.y = nucleons_y[i];
+
+		participantParticles.push_back(p);
+
+		cout << i+1 << endl;
+	}
+
+	cout << endl << endl;
+}
+
 void processEvent()
 {
 	if(collisionparticles.size() == 0) return;
@@ -114,6 +156,8 @@ void processEvent()
 	float aversin2=0;
 	float aversin3=0;
 	float aver2=0;
+
+	//Update positions of 
 
 	//Calculate centroid
 	for (unsigned int i=0; i<collisionparticles.size(); i++)
@@ -270,31 +314,25 @@ void parseFile14()
 		evtHeaderCounter = 0;
 	}
 
-	for(int i=0; i<r0_x.size(); i++)
+	if(parse_verbosity)
 	{
-		cout << "********** EVENT " << i << "*************" << endl;
-
-		vector<float> vx = r0_x[i];
-		vector<float> vy = r0_y[i];
-		for(int j=0; j<vx.size(); j++)
+		for(int i=0; i<r0_x.size(); i++)
 		{
-			cout << "   " << vx[j] << "  " << vy[j] << endl;
+			cout << "********** EVENT " << i << "*************" << endl;
+
+			vector<float> vx = r0_x[i];
+			vector<float> vy = r0_y[i];
+			for(int j=0; j<vx.size(); j++)
+			{
+				cout << "   " << vx[j] << "  " << vy[j] << endl;
+			}
+			cout << endl;
 		}
-		cout << endl;
 	}
 }
 
-void parseEventPlane(int proc)
+void parseFile20()
 {
-	parseFile14();
-	/*
-	process_number = proc;
-
-	//Initialize histogram
-	hPsi2  = new TH1F("hPsi2","hPsi2",50,0,TMath::Pi());
-	hv2_pT = new TProfile("hv2_pT","hv2_pT",NOB,0,5,-2,2);
-	hv3_pT = new TProfile("hv3_pT","hv3_pT",NOB,0,5,-2,2);
-
 	//Read in test.f20 file
 	ifstream dataFile;
 	dataFile.open("test.f20");
@@ -305,7 +343,7 @@ void parseEventPlane(int proc)
 	}
 	else
 	{
-		cout << Form("--> Successfully opened file") << endl << endl;
+		cout << Form("--> Successfully opened file f20!") << endl << endl;
 	}
 
 	string linestr;
@@ -421,8 +459,13 @@ void parseEventPlane(int proc)
 				pf.px = atof(finalstate_tokens[3].c_str());				
 				pf.py = atof(finalstate_tokens[4].c_str());
 				pf.pz = atof(finalstate_tokens[5].c_str());
+				pf.id = atoi(finalstate_tokens[0].c_str());
 
-				if(atoi(finalstate_tokens[0].c_str()) <= NUCL) nspectator++;
+				if(atoi(finalstate_tokens[0].c_str()) <= NUCL)
+				{
+					nspectator++;
+					spectatorParticles.push_back(pf);
+				}
 
 				finalparticles.push_back(pf);	
 				if(parse_verbosity) cout << "****  " << linestr << endl;
@@ -433,15 +476,33 @@ void parseEventPlane(int proc)
 		if(tokens[0] == "0" && tokens[1] == "0")
 		{
 			//processEvent();
-			collisionparticles.clear();
+			cout << "FLAG" << endl;
+			determineParticipants();
 			finalparticles.clear();
+			spectatorParticles.clear();
+			collisionparticles.clear();
+			participantParticles.clear();
 			npart = 0;
 		}
 
 		if (!dataFile) break;
-
 	}
+}
 
+void parseEventPlane(int proc)
+{
+	//Set label for output file (when running in parallel)
+	process_number = proc;
+
+	//Initialize histograms
+	hPsi2  = new TH1F("hPsi2","hPsi2",50,0,TMath::Pi());
+	hv2_pT = new TProfile("hv2_pT","hv2_pT",NOB,0,5,-2,2);
+	hv3_pT = new TProfile("hv3_pT","hv3_pT",NOB,0,5,-2,2);
+
+	//Parse geometry files
+	parseFile14();
+	parseFile20();
+/*
 	//Compute mean epsilon2 and epsilon3
 	float ep2avg = 0;
 	float ep3avg = 0;
