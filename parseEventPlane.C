@@ -58,7 +58,7 @@ const int NOB = 100;
 // --> d+Au = 199
 // --> d+Pb = 210
 // --> p+Pb = 209
-const int NUCL = 199;
+const int NUCL = 198;
 
 //Event characterization variables
 int npart          = 0;
@@ -136,8 +136,6 @@ void determineParticipants()
 		p.y = nucleons_y[i];
 
 		participantParticles.push_back(p);
-
-		cout << i+1 << endl;
 	}
 
 	cout << endl << endl;
@@ -145,7 +143,7 @@ void determineParticipants()
 
 void processEvent()
 {
-	if(collisionparticles.size() == 0) return;
+	if(participantParticles.size() == 0) return;
 
 	float cmx=0;
 	float cmy=0;
@@ -160,49 +158,49 @@ void processEvent()
 	//Update positions of 
 
 	//Calculate centroid
-	for (unsigned int i=0; i<collisionparticles.size(); i++)
+	for (unsigned int i=0; i<participantParticles.size(); i++)
 	{
-		xsum = xsum + collisionparticles[i].x;
-		ysum = ysum + collisionparticles[i].y;
+		xsum = xsum + participantParticles[i].x;
+		ysum = ysum + participantParticles[i].y;
 	}
 
-	cmx = xsum/collisionparticles.size();
-	cmy = ysum/collisionparticles.size();
+	cmx = xsum/participantParticles.size();
+	cmy = ysum/participantParticles.size();
 
 	//Calculate each useful value of collision particles
 	//Store them in vectors
-	for (unsigned int i=0; i<collisionparticles.size(); i++)
+	for (unsigned int i=0; i<participantParticles.size(); i++)
 	{
 		//Shift to center of mass frame
-		collisionparticles[i].x = collisionparticles[i].x - cmx;
-		collisionparticles[i].y = collisionparticles[i].y - cmy;
+		participantParticles[i].x = participantParticles[i].x - cmx;
+		participantParticles[i].y = participantParticles[i].y - cmy;
 
-		collisionparticles[i].phi = TMath::ATan2(collisionparticles[i].y,collisionparticles[i].x);
-		collisionparticles[i].rsquare = collisionparticles[i].x*collisionparticles[i].x + collisionparticles[i].y*collisionparticles[i].y;
-		collisionparticles[i].pT = TMath::Sqrt(collisionparticles[i].px*collisionparticles[i].px + collisionparticles[i].py*collisionparticles[i].py);
+		participantParticles[i].phi = TMath::ATan2(participantParticles[i].y,participantParticles[i].x);
+		participantParticles[i].rsquare = participantParticles[i].x*participantParticles[i].x + participantParticles[i].y*participantParticles[i].y;
+		participantParticles[i].pT = TMath::Sqrt(participantParticles[i].px*participantParticles[i].px + participantParticles[i].py*participantParticles[i].py);
 	}
 
 	//Calculate the average values for computing epsilon_2
-	for (unsigned int i=0; i<collisionparticles.size(); i++)
+	for (unsigned int i=0; i<participantParticles.size(); i++)
 	{
-		avercos2 = avercos2 + collisionparticles[i].rsquare * TMath::Cos(2*collisionparticles[i].phi);
-		aversin2 = aversin2 + collisionparticles[i].rsquare * TMath::Sin(2*collisionparticles[i].phi);
-		aver2    = aver2 + collisionparticles[i].rsquare;
+		avercos2 = avercos2 + participantParticles[i].rsquare * TMath::Cos(2*participantParticles[i].phi);
+		aversin2 = aversin2 + participantParticles[i].rsquare * TMath::Sin(2*participantParticles[i].phi);
+		aver2    = aver2 + participantParticles[i].rsquare;
 	}
 
-	avercos2 = avercos2 / collisionparticles.size();
-	aversin2 = aversin2 / collisionparticles.size();
-	aver2    = aver2 / collisionparticles.size();
+	avercos2 = avercos2 / participantParticles.size();
+	aversin2 = aversin2 / participantParticles.size();
+	aver2    = aver2 / participantParticles.size();
 
 	//Calculate the average values for n=3
-	for (unsigned int i=0; i<collisionparticles.size(); i++)
+	for (unsigned int i=0; i<participantParticles.size(); i++)
 	{
-		avercos3 = avercos3 + collisionparticles[i].rsquare * TMath::Cos(3*collisionparticles[i].phi);
-		aversin3 = aversin3 + collisionparticles[i].rsquare * TMath::Sin(3*collisionparticles[i].phi);
+		avercos3 = avercos3 + participantParticles[i].rsquare * TMath::Cos(3*participantParticles[i].phi);
+		aversin3 = aversin3 + participantParticles[i].rsquare * TMath::Sin(3*participantParticles[i].phi);
 	}
 
-	avercos3 = avercos3 / collisionparticles.size();
-	aversin3 = aversin3 / collisionparticles.size();
+	avercos3 = avercos3 / participantParticles.size();
+	aversin3 = aversin3 / participantParticles.size();
 
 	//Calculate epsilon_n and psi_n and put them into vectors
 	//Using formulas from arXiv:1501.06880
@@ -241,7 +239,7 @@ void processEvent()
 void parseFile14()
 {	
 	ifstream dataFile14;
-	dataFile14.open("test.f14");
+	dataFile14.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test.f14");
 	if (!dataFile14)
 	{
 		printf("File does not exist\n");
@@ -335,7 +333,7 @@ void parseFile20()
 {
 	//Read in test.f20 file
 	ifstream dataFile;
-	dataFile.open("test.f20");
+	dataFile.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -475,9 +473,8 @@ void parseFile20()
   		//Process event
 		if(tokens[0] == "0" && tokens[1] == "0")
 		{
-			//processEvent();
-			cout << "FLAG" << endl;
 			determineParticipants();
+			processEvent();
 			finalparticles.clear();
 			spectatorParticles.clear();
 			collisionparticles.clear();
@@ -502,7 +499,7 @@ void parseEventPlane(int proc)
 	//Parse geometry files
 	parseFile14();
 	parseFile20();
-/*
+
 	//Compute mean epsilon2 and epsilon3
 	float ep2avg = 0;
 	float ep3avg = 0;
@@ -526,6 +523,7 @@ void parseEventPlane(int proc)
 	cout << "<Nspec>      = " << (float) nspectator/numevent << endl;
 	cout << "<Npart>      = " << NUCL - (float) nspectator/numevent << endl;
 
+/*
 	writeData();
 	*/
 }
