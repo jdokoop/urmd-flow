@@ -26,6 +26,7 @@
 #include "TH1.h"
 #include "TH2.h"
 #include "TH3.h"
+#include "TF1.h"
 #include "TProfile.h"
 
 using namespace std;
@@ -97,6 +98,9 @@ TProfile *hv3_pT;
 //Miscellaneous options
 bool parse_verbosity = false;
 
+//Smear nucleon positions with Gaussian?
+bool smear_nucleons = false;
+
 //---------------------------------------------------------
 // Functions
 //---------------------------------------------------------
@@ -137,13 +141,13 @@ void determineParticipants()
 
 		participantParticles.push_back(p);
 	}
-
-	cout << endl << endl;
 }
 
 void processEvent()
 {
 	if(participantParticles.size() == 0) return;
+
+	double Count = participantParticles.size();
 
 	float cmx=0;
 	float cmy=0;
@@ -155,7 +159,12 @@ void processEvent()
 	float aversin3=0;
 	float aver2=0;
 
-	//Update positions of 
+	//If Gaussian smearing is enabled for nucleon positions
+	double SmearSigma = 0.4; // units of fm
+	TF1 *fradius = new TF1("fradius","x*TMath::Exp(-x*x/(2*[0]*[0]))",0.0,2.0);
+	fradius->SetParameter(0,SmearSigma);
+	TF1 *fphi = new TF1("fphi","1.0",0.0,2.0*TMath::Pi());
+	int SmearSamplings = 100;
 
 	//Calculate centroid
 	for (unsigned int i=0; i<participantParticles.size(); i++)
@@ -180,27 +189,55 @@ void processEvent()
 		participantParticles[i].pT = TMath::Sqrt(participantParticles[i].px*participantParticles[i].px + participantParticles[i].py*participantParticles[i].py);
 	}
 
-	//Calculate the average values for computing epsilon_2
-	for (unsigned int i=0; i<participantParticles.size(); i++)
+	if(smear_nucleons)
 	{
-		avercos2 = avercos2 + participantParticles[i].rsquare * TMath::Cos(2*participantParticles[i].phi);
-		aversin2 = aversin2 + participantParticles[i].rsquare * TMath::Sin(2*participantParticles[i].phi);
-		aver2    = aver2 + participantParticles[i].rsquare;
+		for(int i=0; i<participantParticles.size(); i++)
+		{
+			for (int is=0;is<SmearSamplings;is++) 
+			{
+				double rtemp   = fradius->GetRandom();
+				double phitemp = fphi->GetRandom();
+				double xtemp   = participantParticles[i].x + rtemp*TMath::Sin(phitemp);
+				double ytemp   = participantParticles[i].y + rtemp*TMath::Cos(phitemp);
+
+				float r    = TMath::Sqrt(xtemp*xtemp + ytemp*ytemp);
+				float phi  = TMath::ATan2(ytemp,xtemp);
+
+				avercos2 += r*r*TMath::Cos(2*phi);
+				aversin2 += r*r*TMath::Sin(2*phi);
+				avercos3 += r*r*TMath::Cos(3*phi);
+				aversin3 += r*r*TMath::Sin(3*phi);
+				aver2 += r*r;
+
+			Count = Count + 1;  // noting this is a double
+		}
+	}
+}
+else
+	{
+		//Calculate the average values for computing epsilon_2
+		for (unsigned int i=0; i<participantParticles.size(); i++)
+		{
+			avercos2 = avercos2 + participantParticles[i].rsquare * TMath::Cos(2*participantParticles[i].phi);
+			aversin2 = aversin2 + participantParticles[i].rsquare * TMath::Sin(2*participantParticles[i].phi);
+			aver2    = aver2 + participantParticles[i].rsquare;
+		}
+
+		//Calculate the average values for n=3
+		for (unsigned int i=0; i<participantParticles.size(); i++)
+		{
+			avercos3 = avercos3 + participantParticles[i].rsquare * TMath::Cos(3*participantParticles[i].phi);
+			aversin3 = aversin3 + participantParticles[i].rsquare * TMath::Sin(3*participantParticles[i].phi);
+		}
 	}
 
-	avercos2 = avercos2 / participantParticles.size();
-	aversin2 = aversin2 / participantParticles.size();
-	aver2    = aver2 / participantParticles.size();
+	avercos2 = avercos2 / Count;
+	aversin2 = aversin2 / Count;
 
-	//Calculate the average values for n=3
-	for (unsigned int i=0; i<participantParticles.size(); i++)
-	{
-		avercos3 = avercos3 + participantParticles[i].rsquare * TMath::Cos(3*participantParticles[i].phi);
-		aversin3 = aversin3 + participantParticles[i].rsquare * TMath::Sin(3*participantParticles[i].phi);
-	}
+	avercos3 = avercos3 / Count;
+	aversin3 = aversin3 / Count;
 
-	avercos3 = avercos3 / participantParticles.size();
-	aversin3 = aversin3 / participantParticles.size();
+	aver2    = aver2 / Count;
 
 	//Calculate epsilon_n and psi_n and put them into vectors
 	//Using formulas from arXiv:1501.06880
