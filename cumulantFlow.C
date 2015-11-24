@@ -47,6 +47,8 @@ struct particle
 // --> p+Pb = 209
 const int NUCL = 199;
 
+const int NBIN = 50;
+
 //Event characterization variables
 int npart          = 0;
 int npartsum       = 0;
@@ -54,12 +56,30 @@ int nspectator     = 0;
 int numevent       = 0;
 int process_number = 0;
 
-//Variables for reference flow calculation
-TProfile *h_db_2;     // <<2>>
-TProfile *h_db_4;     // <<4>>
+//Event-wise reference flow
+//Must be cleared after every event
+float q2x  = 0;
+float q2y  = 0;
+float q4x  = 0;
+float q4y  = 0;
+float sb_2 = 0;
+float sb_4 = 0;
 
-TProfile *h_db_2prime; // <<2'>>
-TProfile *h_db_4prime; // <<4'>>
+TH1F *h_sb_2prime;
+TH1F *h_sb_4prime;
+
+TH1F *hp2x;
+TH1F *hp2y;
+TH1F *hp4x;
+TH1F *hp4y;
+
+TH1F *hn;
+
+//Average over events
+TProfile *h_db_2;
+TProfile *h_db_4;
+TProfile *h_db_2prime;
+TProfile *h_db_4prime;
 
 //Participant particles in each event
 vector<particle> collisionparticles;
@@ -81,105 +101,92 @@ bool parse_verbosity = false;
 
 void computeFlow()
 {
-	//REFERENCE FLOW
+	float c2 = h_db_2->GetBinContent(1);
+	h_db_2prime->Scale(1.0/sqrt(c2));
+	h_db_2prime->Draw();
+}
 
-	//Start by computing q-vector
-	float q2x = 0;
-	float q2y = 0;
+void processFlow()
+{
+	//Clear event-wise variables
+	q2x  = 0;
+	q2y  = 0;
+	q4x  = 0;
+	q4y  = 0;
+	sb_2 = 0;
+	sb_4 = 0;
+	h_sb_2prime->Reset();
+	h_sb_4prime->Reset();
+	hp2x->Reset();
+	hp2y->Reset();
+	hp4x->Reset();
+	hp4y->Reset();
+	hn->Reset();
 
-	float q4x = 0;
-	float q4y = 0;
-
+	//Loop over particles, computing Q-vector
 	int M = finalparticles.size();
-
 	for(int i=0; i<M; i++)
 	{
-		particle p = finalparticles[i];
-		float phi = p.phi;
+		q2x = q2x + TMath::Cos(2*finalparticles[i].phi);
+		q2y = q2y + TMath::Sin(2*finalparticles[i].phi);
 
-		q2x += TMath::Cos(2*phi);
-		q2y += TMath::Sin(2*phi);
-
-		q4x += TMath::Cos(4*phi);
-		q4y += TMath::Sin(4*phi);	
+		q4x = q4x + TMath::Cos(4*finalparticles[i].phi);
+		q4y = q4y + TMath::Sin(4*finalparticles[i].phi);		
 	}
 
-	//Single event reference cumulants
-	float sb_2 = 0;
-	float sb_4 = 0;
-
-	sb_2 = ((q2x*q2x + q2y*q2y) - M)/(M*(M-1));
-
-	float aux1 = q2x*q2x + q2y*q2y;
-	float aux2 = q4x*q4x + q4y*q4y;
-	float aux3 = -2*(q2x*q2x*q4x - q2y*q2y*q4x + 2*q2x*q2y*q4y);
-	float aux4 = -4*(M-2)*(q2x*q2x + q2y*q2y);
-	float aux5 = 2*M*(M-3);
-	sb_4 = (aux1+aux2+aux3+aux4+aux5)/(M*(M-1)*(M-2)*(M-3));
-
-	//Fill TProfile to compute event averages
+	//Reference flow
+	sb_2 = ((q2x*q2x + q2y*q2y) - M)/(M*(M - 1));
 	h_db_2->Fill(0.5,sb_2,1);
+
+	float sb_4_aux1 = (q2x*q2x + q2y*q2y)*(q2x*q2x + q2y*q2y);
+	float sb_4_aux2 = q4x*q4x + q4y*q4y;
+	float sb_4_aux3 = -2*(q2x*q2x*q4x - q2y*q2y*q4x + 2*q2x*q2y*q4y);
+	float sb_4_aux4 = -4*(M-2)*(q2x*q2x + q2y*q2y);
+	float sb_4_aux5 = 2*M*(M-3);
+	float sb_4_aux6 = M*(M-1)*(M-2)*(M-3);
+	sb_4 = (sb_4_aux1 + sb_4_aux2 + sb_4_aux3 + sb_4_aux4 + sb_4_aux5)/sb_4_aux6;
 	h_db_4->Fill(0.5,sb_4,1);
 
-	//DIFFERENTIAL FLOW
-
-	//Compute p-vector for particles of interest (each pT bin)
-	TH1F *hp2x = new TH1F("hp2","hp2",50,0,5);
-	TH1F *hp4x = new TH1F("hp4","hp4",50,0,5);
-	TH1F *hp2y = new TH1F("hp2","hp2",50,0,5);
-	TH1F *hp4y = new TH1F("hp4","hp4",50,0,5);
-	TH1F *hm  = new TH1F("hm","hm",50,0,5);
-
-	//Initialize p-vectors with zeroes
-	for(int i=0; i<hp2x->GetNbinsX(); i++)
-	{
-		hp2x->SetBinContent(i+1,0);
-		hp4x->SetBinContent(i+1,0);
-		hp2y->SetBinContent(i+1,0);
-		hp4y->SetBinContent(i+1,0);
-	}
-
+	//Differential cumulants
 	for(int i=0; i<M; i++)
 	{
-		particle p = finalparticles[i];
-		float pT = sqrt(p.px*p.px + p.py*p.py);
-		float phi = p.phi;
-		int bin = hm->FindBin(pT);
+		float pT = sqrt(pow(finalparticles[i].px,2) + pow(finalparticles[i].py,2));
+		int bin = hp2x->FindBin(pT);
 
-		//Keep track of how many particles there are per bin
-		hm->Fill(pT);
+		hp2x->SetBinContent(bin, hp2x->GetBinContent(bin) + TMath::Cos(2*finalparticles[i].phi));
+		hp2y->SetBinContent(bin, hp2y->GetBinContent(bin) + TMath::Sin(2*finalparticles[i].phi));
+		hp4x->SetBinContent(bin, hp4x->GetBinContent(bin) + TMath::Cos(4*finalparticles[i].phi));
+		hp4y->SetBinContent(bin, hp4y->GetBinContent(bin) + TMath::Sin(4*finalparticles[i].phi));
 
-		hp2x->SetBinContent(bin,hp2x->GetBinContent(i) + TMath::Cos(2*phi));
-		hp2y->SetBinContent(bin,hp2y->GetBinContent(i) + TMath::Sin(2*phi));
-
-		hp4x->SetBinContent(bin,hp4x->GetBinContent(i) + TMath::Cos(4*phi));
-		hp4y->SetBinContent(bin,hp4y->GetBinContent(i) + TMath::Sin(4*phi));
+		hn->Fill(pT);
 	}
 
-	//Single event differential cumulants
-	TH1F *hsb_2prime;
-	hsb_2prime = new TH1F("hsb_2prime","hsb_2prime",50,0,5);
-
-	TH1F *hsb_4prime;
-	hsb_4prime = new TH1F("hsb_4prime","hsb_4prime",50,0,5);
-
-	for(int i=0; i<hsb_2prime->GetNbinsX(); i++)
+	//Computing <2'>
+	for(int i=1; i<NBIN; i++)
 	{
-		int n = hm->GetBinContent(i+1);
-		float val = ((hp2x->GetBinContent(i+1))*(q2x) + (hp2y->GetBinContent(i+1))*(q2y))/(n*M-n);
-		hsb_2prime->SetBinContent(i+1,val);
+		float p2x = hp2x->GetBinContent(i);
+		float p2y = hp2y->GetBinContent(i);
+		float p4x = hp4x->GetBinContent(i);
+		float p4y = hp4y->GetBinContent(i);
+
+		float sb_2prime_aux = p2x*q2x + p2y*q2y;
+		int n = hn->GetBinContent(i);
+
+		float sb_2prime_cont = (float) (sb_2prime_aux - n)/(n*M - n);
+		h_sb_2prime->SetBinContent(i,sb_2prime_cont);
 	}
 
-	//Accumulate event averages
-	for(int i=0; i<hsb_2prime->GetNbinsX(); i++)
+	//Accumulate in <<2'>>
+	for(int i=1; i<NBIN; i++)
 	{
-		h_db_2prime->Fill(hsb_2prime->GetBinCenter(i+1),hsb_2prime->GetBinContent(i+1),1);
+		float pT = h_sb_2prime->GetBinCenter(i);
+		h_db_2prime->Fill(pT, h_sb_2prime->GetBinContent(i), 1);
 	}
 }
 
 void processEvent()
 {
-	computeFlow();
+	processFlow();
 }
 
 void parseFile20()
@@ -345,13 +352,20 @@ void cumulantFlow(int proc)
 	process_number = proc;
 
 	//Initialize histograms
-	h_db_2 = new TProfile("h_db_2","h_db_2",1,0,1,-1000,1000);
-	h_db_4 = new TProfile("h_db_4","h_db_4",1,0,1,-1000,1000);
+	h_db_2      = new TProfile("h_db_2","h_db_2",1,0,1,-500,500);
+	h_db_4      = new TProfile("h_db_4","h_db_4",1,0,1,-500,500);
+	h_db_2prime = new TProfile("h_db_2prime","h_db_2prime",NBIN,0,5,-500,500);
+	h_db_4prime = new TProfile("h_db_4prime","h_db_4prime",NBIN,0,5,-500,500);
 
-	h_db_2prime = new TProfile("h_db_2prime","h_db_2prime",50,0,5,-1000,1000);
-	h_db_4prime = new TProfile("h_db_4prime","h_db_4prime",50,0,5,-1000,1000);
+	h_sb_2prime = new TH1F("h_sb_2prime","h_sb_2prime",NBIN,0,5);
+	h_sb_4prime = new TH1F("h_sb_4prime","h_sb_4prime",NBIN,0,5);
+	hn          = new TH1F("hn","hn",NBIN,0,5);
+	hp2x        = new TH1F("hp2x","hp2x",NBIN,0,5);
+	hp2y        = new TH1F("hp2y","hp2y",NBIN,0,5);
+	hp4x        = new TH1F("hp4x","hp4x",NBIN,0,5);
+	hp4y        = new TH1F("hp4y","hp4y",NBIN,0,5);
 
 	parseFile20();
-	h_db_2prime->Scale(1.0/sqrt((h_db_2->GetBinContent(1))));
-	h_db_2prime->Draw();
+
+	computeFlow();
 }
