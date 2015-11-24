@@ -99,12 +99,28 @@ bool parse_verbosity = false;
 // Functions
 //-------------------------------------------
 
+void writeData()
+{
+	TFile *fout = new TFile(Form("/direct/phenix+hhj/jdok/UrQMD_Output/urqmd_out_%i.root",process_number),"RECREATE");
+	h_db_2->Write();
+	h_db_4->Write();
+	h_db_2prime->Write();
+	h_db_4prime->Write();
+	fout->Close();
+}
+
 void computeFlow()
 {
 	float c2_2 = h_db_2->GetBinContent(1);
 	float c2_4 = h_db_4->GetBinContent(1) - 2*pow(h_db_2->GetBinContent(1),2); 
 
+	cout << "h_db_2 " << h_db_2->GetBinContent(1) << endl;
+	cout << "h_db_4 " << h_db_4->GetBinContent(1) << endl;	
+
+	TProfile *hd2_2 = (TProfile*) h_db_2prime->Clone("hd2_2");
 	TH1F *hd2_4 = new TH1F("hd2_4","hd2_4",NBIN,0,5);
+
+	hd2_2->Scale(1.0/sqrt(c2_2));
 
 	for(int i=1; i<=NBIN; i++)
 	{
@@ -112,13 +128,8 @@ void computeFlow()
 		hd2_4->SetBinContent(i,val);
 	}
 
-	hd2_4->Scale(-1.0/pow(-1*c2_4,3.0/4.0));
-	hd2_4->Draw();
+	hd2_2->Draw();
 
-	//h_db_2prime->Scale(1.0/sqrt(c2));
-	//h_db_2prime->Draw();
-
-	//h_db_4prime->Draw();
 }
 
 void processFlow()
@@ -151,7 +162,8 @@ void processFlow()
 
 	//Reference flow
 	sb_2 = ((q2x*q2x + q2y*q2y) - M)/(M*(M - 1));
-	h_db_2->Fill(0.5,sb_2,1);
+	float rwt_2 = M*(M-1);
+	h_db_2->Fill(0.5,sb_2,rwt_2);
 
 	float sb_4_aux1 = (q2x*q2x + q2y*q2y)*(q2x*q2x + q2y*q2y);
 	float sb_4_aux2 = q4x*q4x + q4y*q4y;
@@ -160,7 +172,8 @@ void processFlow()
 	float sb_4_aux5 = 2*M*(M-3);
 	float sb_4_aux6 = M*(M-1)*(M-2)*(M-3);
 	sb_4 = (sb_4_aux1 + sb_4_aux2 + sb_4_aux3 + sb_4_aux4 + sb_4_aux5)/sb_4_aux6;
-	h_db_4->Fill(0.5,sb_4,1);
+	float rwt_4 = M*(M-1)*(M-2)*(M-3);
+	h_db_4->Fill(0.5,sb_4,rwt_4);
 
 	//Differential cumulants
 	for(int i=0; i<M; i++)
@@ -195,7 +208,9 @@ void processFlow()
 	for(int i=1; i<=NBIN; i++)
 	{
 		float pT = h_sb_2prime->GetBinCenter(i);
-		h_db_2prime->Fill(pT, h_sb_2prime->GetBinContent(i), 1);
+		int n = hn->GetBinContent(i);
+		float dwt_2 = n*M - n;
+		h_db_2prime->Fill(pT, h_sb_2prime->GetBinContent(i), dwt_2);
 	}
 
 	//Computing <4'>
@@ -229,7 +244,9 @@ void processFlow()
 	for(int i=1; i<=M; i++)
 	{
 		float pT = h_sb_4prime->GetBinCenter(i);
-		h_db_4prime->Fill(pT, h_sb_4prime->GetBinContent(i), 1);
+		int n = hn->GetBinContent(i);
+		float dwt_4 = (n*M - 3*n)*(M-1)*(M-2);
+		h_db_4prime->Fill(pT, h_sb_4prime->GetBinContent(i), dwt_4);
 	}
 }
 
@@ -243,7 +260,8 @@ void parseFile20()
 	//Read in test.f20 file
 	ifstream dataFile;
 	//dataFile.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test.f20");
-	dataFile.open("/direct/phenix+hhj2/jdok/urqmd-hulthen-3.4/test.f20");
+	//dataFile.open("/direct/phenix+hhj2/jdok/urqmd-hulthen-3.4/test.f20");
+	dataFile.open("test.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -419,5 +437,6 @@ void cumulantFlow(int proc)
 
 	parseFile20();
 
-	computeFlow();
+	//computeFlow();
+	writeData();
 }
