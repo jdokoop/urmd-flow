@@ -101,9 +101,24 @@ bool parse_verbosity = false;
 
 void computeFlow()
 {
-	float c2 = h_db_2->GetBinContent(1);
-	h_db_2prime->Scale(1.0/sqrt(c2));
-	h_db_2prime->Draw();
+	float c2_2 = h_db_2->GetBinContent(1);
+	float c2_4 = h_db_4->GetBinContent(1) - 2*pow(h_db_2->GetBinContent(1),2); 
+
+	TH1F *hd2_4 = new TH1F("hd2_4","hd2_4",NBIN,0,5);
+
+	for(int i=1; i<=NBIN; i++)
+	{
+		float val = (h_db_4prime->GetBinContent(i)) - 2*(h_db_2->GetBinContent(1))*(h_db_2prime->GetBinContent(i));
+		hd2_4->SetBinContent(i,val);
+	}
+
+	hd2_4->Scale(-1.0/pow(-1*c2_4,3.0/4.0));
+	hd2_4->Draw();
+
+	//h_db_2prime->Scale(1.0/sqrt(c2));
+	//h_db_2prime->Draw();
+
+	//h_db_4prime->Draw();
 }
 
 void processFlow()
@@ -162,7 +177,7 @@ void processFlow()
 	}
 
 	//Computing <2'>
-	for(int i=1; i<NBIN; i++)
+	for(int i=1; i<=NBIN; i++)
 	{
 		float p2x = hp2x->GetBinContent(i);
 		float p2y = hp2y->GetBinContent(i);
@@ -177,10 +192,44 @@ void processFlow()
 	}
 
 	//Accumulate in <<2'>>
-	for(int i=1; i<NBIN; i++)
+	for(int i=1; i<=NBIN; i++)
 	{
 		float pT = h_sb_2prime->GetBinCenter(i);
 		h_db_2prime->Fill(pT, h_sb_2prime->GetBinContent(i), 1);
+	}
+
+	//Computing <4'>
+	for(int i=1; i<=NBIN; i++)
+	{
+		float p2x = hp2x->GetBinContent(i);
+		float p2y = hp2y->GetBinContent(i);
+		float p4x = hp4x->GetBinContent(i);
+		float p4y = hp4y->GetBinContent(i);
+
+		int n = hn->GetBinContent(i);
+
+		float sb_4prime_aux1  = (p2x*q2x + p2y*q2y)*(q2x*q2x + q2y*q2y);
+		float sb_4prime_aux2  = -1*(2*p4y*q2x*q2y + p4x*(q2x*q2x - q2y*q2y));
+		float sb_4prime_aux3  = -1*(p2x*q2x*q4x - p2y*q2y*q4x + p2y*q2x*q4y + p2x*q2y*q4y);
+		float sb_4prime_aux4  = -2*M*(p2x*q2x + p2y*q2y);
+		float sb_4prime_aux5  = -2*n*(q2x*q2x + q2y*q2y);
+		float sb_4prime_aux6  = 7*(p2x*q2x + p2y*q2y); 
+		float sb_4prime_aux7  = -1*(p2x*q2x + p2y*q2y);
+		float sb_4prime_aux8  = p4x*q4x + p4y*q4y;
+		float sb_4prime_aux9  = 2*(p2x*q2x + p2y*q2y);
+		float sb_4prime_aux10 = 2*n*M;
+		float sb_4prime_aux11 = -6*n;
+		float sb_4prime_aux12 = (n*M - 3*n)*(M-1)*(M-2);
+
+		float sb_4prime_cont = (float) (sb_4prime_aux1 + sb_4prime_aux2 + sb_4prime_aux3 + sb_4prime_aux4 + sb_4prime_aux5 + sb_4prime_aux6 + sb_4prime_aux7 + sb_4prime_aux8 + sb_4prime_aux9 + sb_4prime_aux10 + sb_4prime_aux11)/sb_4prime_aux12; 
+		h_sb_4prime->SetBinContent(i,sb_4prime_cont);
+	}
+
+	//Accumulate in <<4'>>
+	for(int i=1; i<=M; i++)
+	{
+		float pT = h_sb_4prime->GetBinCenter(i);
+		h_db_4prime->Fill(pT, h_sb_4prime->GetBinContent(i), 1);
 	}
 }
 
@@ -326,7 +375,10 @@ void parseFile20()
 					spectatorParticles.push_back(pf);
 				}
 
-				finalparticles.push_back(pf);
+				if(TMath::Abs(pf.eta)<2)
+				{
+					finalparticles.push_back(pf);
+				}
 				if(parse_verbosity) cout << "****  " << linestr << endl;
 			}
 		}
