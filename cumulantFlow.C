@@ -128,7 +128,8 @@ void computeFlow()
 		hd2_4->SetBinContent(i,val);
 	}
 
-	hd2_2->Draw();
+	//hd2_2->Draw();
+	cout << "*** " << c2_4 << endl;
 
 }
 
@@ -260,8 +261,8 @@ void parseFile20()
 	//Read in test.f20 file
 	ifstream dataFile;
 	//dataFile.open("/direct/phenix+hhj/jdok/UrQMD/urqmd-3.4/test.f20");
-	//dataFile.open("/direct/phenix+hhj2/jdok/urqmd-hulthen-3.4/test.f20");
-	dataFile.open("test.f20");
+	dataFile.open("/direct/phenix+hhj2/jdok/urqmd-hulthen-3.4/test.f20");
+	//dataFile.open("test.f20");
 	if (!dataFile)
 	{
 		printf("File does not exist\n");
@@ -437,6 +438,6 @@ void cumulantFlow(int proc)
 
 	parseFile20();
 
-	//computeFlow();
-	writeData();
+	computeFlow();
+	//writeData();
 }
